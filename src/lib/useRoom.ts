@@ -54,7 +54,7 @@ export function useRoom() {
   const [state, setState] = useState<RoomState | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [sync, setSync] = useState({ ready: false, uncertainty: Infinity });
+  const [sync, setSync] = useState({ ready: false, dispersion: Infinity, rtt: Infinity });
 
   const [prefs, setPrefsState] = useState<LocalPrefs>(loadPrefs);
   const prefsRef = useRef(prefs);
@@ -109,7 +109,7 @@ export function useRoom() {
           case 'pong': {
             const clock = clockRef.current;
             clock.addSample(msg.t0, msg.ts, now());
-            setSync({ ready: clock.ready, uncertainty: clock.uncertainty });
+            setSync({ ready: clock.ready, dispersion: clock.dispersion, rtt: clock.rtt });
             break;
           }
           case 'joined':
@@ -144,7 +144,7 @@ export function useRoom() {
         setConnection('offline');
         // 서버가 재시작되면 시계 기준이 바뀔 수 있으니 샘플을 버린다
         clockRef.current.reset();
-        setSync({ ready: false, uncertainty: Infinity });
+        setSync({ ready: false, dispersion: Infinity, rtt: Infinity });
         retry++;
         reconnectTimer = window.setTimeout(connect, Math.min(5000, 300 * retry));
       };

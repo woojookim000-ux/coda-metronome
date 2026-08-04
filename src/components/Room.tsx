@@ -80,7 +80,13 @@ export default function Room({ room }: { room: RoomApi }) {
 
   const syncLabel = !room.sync.ready
     ? '동기화 중…'
-    : `동기화 ±${Math.max(1, Math.round(room.sync.uncertainty))}ms`;
+    : `동기화 ±${Math.max(1, Math.round(room.sync.dispersion))}ms`;
+  const syncTitle = room.sync.ready
+    ? `서버 응답 ${Math.round(room.sync.rtt)}ms · 기기 간 예상 오차 ±${Math.max(
+        1,
+        Math.round(room.sync.dispersion)
+      )}ms`
+    : '서버와 시계를 맞추는 중';
 
   return (
     <div className={`screen room${state.running ? ' running' : ''}`}>
@@ -95,7 +101,9 @@ export default function Room({ room }: { room: RoomApi }) {
         <div className="head-meta">
           <span className={`dot ${room.connection}`} />
           <span>{room.members.length}명</span>
-          <span className={room.sync.ready ? 'sync ok' : 'sync'}>{syncLabel}</span>
+          <span className={room.sync.ready ? 'sync ok' : 'sync'} title={syncTitle}>
+            {syncLabel}
+          </span>
         </div>
       </header>
 

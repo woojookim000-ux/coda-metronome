@@ -18,8 +18,17 @@ export class Clock {
   private samples: Sample[] = [];
   /** 서버시각 = 로컬시각 + offset */
   offset = 0;
-  /** 추정 오차(ms). 채택한 샘플의 왕복시간 절반. */
-  uncertainty = Infinity;
+  /**
+   * 채택한 샘플들의 오프셋이 얼마나 흩어져 있는가(ms).
+   *
+   * 왕복시간의 절반을 오차로 쓰면 서버가 멀 때 수십 ms로 나오는데, 그건
+   * 실제로 기기끼리 어긋나는 정도가 아니다. 같은 망에서 같은 서버를 보는
+   * 기기들은 경로 비대칭이 서로 비슷해서 그 성분이 상쇄되기 때문이다.
+   * 남는 것은 추정값의 흔들림이고, 그게 기기 간 차이를 더 잘 예측한다.
+   */
+  dispersion = Infinity;
+  /** 왕복시간(ms). 참고용. */
+  rtt = Infinity;
   ready = false;
 
   addSample(t0: number, ts: number, t3: number) {
@@ -36,14 +45,16 @@ export class Clock {
     const offsets = keep.map((s) => s.offset).sort((a, b) => a - b);
 
     this.offset = offsets[Math.floor(offsets.length / 2)];
-    this.uncertainty = keep[keep.length - 1].rtt / 2;
+    this.dispersion = offsets.length > 1 ? offsets[offsets.length - 1] - offsets[0] : Infinity;
+    this.rtt = keep[0].rtt;
     this.ready = this.samples.length >= 5;
   }
 
   reset() {
     this.samples = [];
     this.offset = 0;
-    this.uncertainty = Infinity;
+    this.dispersion = Infinity;
+    this.rtt = Infinity;
     this.ready = false;
   }
 
