@@ -101,7 +101,8 @@ export class MetronomeEngine {
   /** 지금 예약돼 있는 소리들을 계산할 때 쓴 k */
   private kUsed = Number.NaN;
 
-  private scheduledNodes: OscillatorNode[] = [];
+  /** 예약해 둔 소리. 다시 걸 때 어느 박부터인지 알아야 해서 박 번호를 함께 갖는다. */
+  private scheduledNodes: { beat: number; osc: OscillatorNode }[] = [];
   private visualTimers: number[] = [];
 
   /** 박이 실제로 들리는 순간 호출된다 (논리 박 번호) */
@@ -197,9 +198,14 @@ export class MetronomeEngine {
     this.clearScheduled();
   }
 
-  /** 이미 예약해 둔 소리와 화면 갱신을 취소한다 (정지 버튼 눌렀을 때) */
-  private clearScheduled() {
-    for (const osc of this.scheduledNodes) {
+  /**
+   * 이미 예약해 둔 소리와 화면 갱신을 취소한다.
+   * @returns 취소한 것 중 가장 이른 박 번호. 없으면 null.
+   */
+  private clearScheduled(): number | null {
+    let earliest: number | null = null;
+    for (const { beat, osc } of this.scheduledNodes) {
+      if (earliest === null || beat < earliest) earliest = beat;
       try {
         osc.stop();
         osc.disconnect();
@@ -210,6 +216,7 @@ export class MetronomeEngine {
     this.scheduledNodes = [];
     for (const t of this.visualTimers) clearTimeout(t);
     this.visualTimers = [];
+    return earliest;
   }
 
   private tick = () => {
@@ -217,13 +224,20 @@ export class MetronomeEngine {
     const tl = this.timeline;
     if (!state || !tl || !state.running || !this.ctx) return;
 
-    // 매핑이 움직였으면 이미 예약해 둔 소리들은 어긋난 시각에 걸려 있다.
-    // 특히 재생 직후에는 매핑이 아직 수렴하는 중이라 첫 박들이 몇 ms씩 밀린다.
-    // 예약은 250ms 앞까지뿐이므로, 다시 잡아 거는 비용이 싸다.
     const jumped = this.audioMap.update(this.ctx);
-    if (jumped || !(Math.abs(this.audioMap.k - this.kUsed) <= 0.5)) {
+
+    if (jumped) {
+      // 오디오가 멈췄다 재개된 경우. 예약해 둔 것들은 통째로 의미가 없으니 버리고
+      // 지금 이후의 박부터 다시 센다.
       this.clearScheduled();
       this.nextBeat = this.firstBeatFromNow();
+      this.kUsed = this.audioMap.k;
+    } else if (!(Math.abs(this.audioMap.k - this.kUsed) <= 2)) {
+      // 매핑이 아직 수렴하는 중이라 예약해 둔 박들이 몇 ms 밀려 있다.
+      // 취소한 박들을 그대로 다시 걸어야 한다. 여기서 "지금 이후"로 다시 세면
+      // 경계에 걸린 박이 통째로 사라진다(실제로 한 박이 빠지는 걸 확인했다).
+      const earliest = this.clearScheduled();
+      if (earliest !== null) this.nextBeat = earliest;
       this.kUsed = this.audioMap.k;
     }
 
@@ -250,7 +264,7 @@ export class MetronomeEngine {
     const info = beatInfo(tl, logicalBeat);
 
     if (this.prefs.soundOn && at > ctx.currentTime) {
-      this.click(at, this.prefs.accent && info.isAccent, info.isCountIn);
+      this.click(logicalBeat, at, this.prefs.accent && info.isAccent, info.isCountIn);
     }
 
     // 화면은 지연 보정 없이, 소리가 귀에 닿는 시각에 맞춘다
@@ -263,7 +277,7 @@ export class MetronomeEngine {
     this.visualTimers.push(t);
   }
 
-  private click(at: number, accent: boolean, countIn: boolean) {
+  private click(beat: number, at: number, accent: boolean, countIn: boolean) {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -281,17 +295,17 @@ export class MetronomeEngine {
     osc.stop(at + 0.06);
 
     osc.onended = () => {
-      const i = this.scheduledNodes.indexOf(osc);
+      const i = this.scheduledNodes.findIndex((s) => s.osc === osc);
       if (i >= 0) this.scheduledNodes.splice(i, 1);
       gain.disconnect();
     };
-    this.scheduledNodes.push(osc);
+    this.scheduledNodes.push({ beat, osc });
   }
 
   /** 지연 보정 슬라이더를 맞출 때 쓰는 즉석 클릭 */
   testClick() {
     if (!this.ctx) return;
-    this.click(this.ctx.currentTime + 0.05, true, false);
+    this.click(Number.NaN, this.ctx.currentTime + 0.05, true, false);
   }
 
   dispose() {
