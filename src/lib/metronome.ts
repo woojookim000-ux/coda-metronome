@@ -1,5 +1,6 @@
 import { Clock, now } from './clock';
-import { beatPosition, DEFAULT_PREFS, type LocalPrefs, type RoomState } from './types';
+import { beatAtOrAfter, beatInfo, timeOfBeat, type Timeline } from './timeline';
+import { DEFAULT_PREFS, type LocalPrefs, type RoomState } from './types';
 
 /**
  * 메트로놈 엔진.
@@ -30,7 +31,8 @@ const HIDDEN_LOOKAHEAD_MS = 3000;
  * 시스템 시계의 드리프트는 아주 느리므로(보통 <50ppm) 이 정도면 충분하다.
  */
 class AudioClockMap {
-  private k = 0;
+  /** 벽시계 = k + 컨텍스트시각*1000 */
+  k = 0;
   private n = 0;
 
   reset() {
@@ -93,10 +95,11 @@ export class MetronomeEngine {
   private prefs: LocalPrefs = DEFAULT_PREFS;
   private audioMap = new AudioClockMap();
 
-  /** anchor로부터 셀 다음 박 인덱스 (0 = anchor 그 자체) */
-  private nextIdx = 0;
-  /** anchor/bpm이 바뀌면 인덱스를 다시 계산해야 한다 */
-  private phaseKey = '';
+  private timeline: Timeline | null = null;
+  /** 다음에 예약할 논리 박 (음수면 카운트인) */
+  private nextBeat = 0;
+  /** 지금 예약돼 있는 소리들을 계산할 때 쓴 k */
+  private kUsed = Number.NaN;
 
   private scheduledNodes: OscillatorNode[] = [];
   private visualTimers: number[] = [];
@@ -155,23 +158,29 @@ export class MetronomeEngine {
     }
   }
 
-  setState(state: RoomState) {
-    const key = `${state.anchor}|${state.anchorBeat}|${state.bpm}|${state.running}`;
-    if (key !== this.phaseKey) {
-      this.phaseKey = key;
-      this.clearScheduled();
-      this.nextIdx = state.running ? this.firstIdxFromNow(state) : 0;
-    }
+  setState(state: RoomState, timeline: Timeline) {
+    // 타임라인은 useRoom에서 메모이즈해 넘기므로 참조 비교로 충분하다
+    const changed =
+      state.anchor !== this.state?.anchor ||
+      state.running !== this.state?.running ||
+      timeline !== this.timeline;
+
     this.state = state;
+    this.timeline = timeline;
+
+    if (changed) {
+      this.clearScheduled();
+      this.nextBeat = state.running ? this.firstBeatFromNow() : 0;
+    }
 
     if (state.running) this.startLoop();
     else this.stopLoop();
   }
 
-  /** 지금 이후에 오는 첫 박의 인덱스 */
-  private firstIdxFromNow(state: RoomState) {
-    const interval = 60000 / state.bpm;
-    return Math.max(0, Math.ceil((this.clock.serverNow() - state.anchor) / interval));
+  /** 지금 이후에 오는 첫 논리 박 */
+  private firstBeatFromNow() {
+    const state = this.state!;
+    return beatAtOrAfter(this.timeline!, this.clock.serverNow() - state.anchor);
   }
 
   private startLoop() {
@@ -205,40 +214,43 @@ export class MetronomeEngine {
 
   private tick = () => {
     const state = this.state;
-    if (!state || !state.running || !this.ctx) return;
+    const tl = this.timeline;
+    if (!state || !tl || !state.running || !this.ctx) return;
 
-    // 매핑이 다시 잡혔다면 이미 예약해 둔 소리들은 엉뚱한 시각에 걸려 있다
-    if (this.audioMap.update(this.ctx)) {
+    // 매핑이 움직였으면 이미 예약해 둔 소리들은 어긋난 시각에 걸려 있다.
+    // 특히 재생 직후에는 매핑이 아직 수렴하는 중이라 첫 박들이 몇 ms씩 밀린다.
+    // 예약은 250ms 앞까지뿐이므로, 다시 잡아 거는 비용이 싸다.
+    const jumped = this.audioMap.update(this.ctx);
+    if (jumped || !(Math.abs(this.audioMap.k - this.kUsed) <= 0.5)) {
       this.clearScheduled();
-      this.nextIdx = this.firstIdxFromNow(state);
+      this.nextBeat = this.firstBeatFromNow();
+      this.kUsed = this.audioMap.k;
     }
 
-    const interval = 60000 / state.bpm;
-    const horizon =
-      this.clock.serverNow() + (document.hidden ? HIDDEN_LOOKAHEAD_MS : LOOKAHEAD_MS);
+    const lookahead = document.hidden ? HIDDEN_LOOKAHEAD_MS : LOOKAHEAD_MS;
+    const horizonElapsed = this.clock.serverNow() + lookahead - state.anchor;
 
-    // 오프셋이 갱신되며 인덱스가 뒤처졌을 수 있으니 아래로 한 번 잡아준다
-    this.nextIdx = Math.max(this.nextIdx, this.firstIdxFromNow(state));
+    // 오프셋이 갱신되며 뒤처졌을 수 있으니 지난 박은 건너뛴다
+    this.nextBeat = Math.max(this.nextBeat, this.firstBeatFromNow());
 
     let guard = 0;
-    while (state.anchor + this.nextIdx * interval < horizon && guard++ < 64) {
-      this.schedule(state, this.nextIdx, state.anchor + this.nextIdx * interval);
-      this.nextIdx++;
+    while (timeOfBeat(tl, this.nextBeat) < horizonElapsed && guard++ < 64) {
+      this.schedule(tl, this.nextBeat, state.anchor + timeOfBeat(tl, this.nextBeat));
+      this.nextBeat++;
     }
   };
 
-  private schedule(state: RoomState, _idx: number, serverTime: number) {
+  private schedule(tl: Timeline, logicalBeat: number, serverTime: number) {
     const ctx = this.ctx!;
-    const logicalBeat = state.anchorBeat + _idx;
     const localTime = this.clock.toLocal(serverTime);
 
     // 이 벽시계 시각에 소리가 "들리도록" 예약한다. 출력 지연은 매핑에 이미
     // 들어 있고, 브라우저가 알 수 없는 블루투스 지연만 사용자 값으로 뺀다.
     const at = this.audioMap.toCtxTime(localTime) - this.prefs.latencyMs / 1000;
-    const pos = beatPosition(logicalBeat, state.beatsPerBar);
+    const info = beatInfo(tl, logicalBeat);
 
     if (this.prefs.soundOn && at > ctx.currentTime) {
-      this.click(at, this.prefs.accent && pos.isAccent, pos.isCountIn);
+      this.click(at, this.prefs.accent && info.isAccent, info.isCountIn);
     }
 
     // 화면은 지연 보정 없이, 소리가 귀에 닿는 시각에 맞춘다

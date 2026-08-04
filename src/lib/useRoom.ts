@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock, now } from './clock';
 import { MetronomeEngine } from './metronome';
+import { buildTimeline, reanchor } from './timeline';
 import type { LocalPrefs, Member, RoomState, Song } from './types';
 import { DEFAULT_PREFS } from './types';
 
@@ -167,9 +168,28 @@ export function useRoom() {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   }, [prefs]);
 
+  // 곡 구간마다 템포·박자표가 다를 수 있으므로 방 상태에서 타임라인을 만든다.
+  // 엔진과 화면이 같은 타임라인을 봐야 소리와 표시가 어긋나지 않는다.
+  const timeline = useMemo(() => {
+    const song = state && state.currentSong >= 0 ? state.setlist[state.currentSong] : null;
+    return buildTimeline({
+      sections: song?.sections ?? [],
+      baseBpm: state?.bpm ?? 120,
+      baseBeatsPerBar: state?.beatsPerBar ?? 4,
+      countInBars: state?.countInEnabled ? state.countInBars : 0,
+    });
+  }, [
+    state?.bpm,
+    state?.beatsPerBar,
+    state?.countInEnabled,
+    state?.countInBars,
+    state?.currentSong,
+    state?.setlist,
+  ]);
+
   useEffect(() => {
-    if (state) engineRef.current.setState(state);
-  }, [state]);
+    if (state) engineRef.current.setState(state, timeline);
+  }, [state, timeline]);
 
   // 소리 켠 사람이 누군지 다른 멤버에게도 보이도록
   useEffect(() => {
@@ -209,9 +229,42 @@ export function useRoom() {
 
   const isHost = !!myId && myId === hostId;
 
+  /**
+   * 호스트가 템포·박자표·곡을 바꿀 때 쓴다.
+   *
+   * 재생 중이라면 anchor를 다시 계산해서 함께 보낸다. 서버는 곡 구조를 모르므로
+   * (구간마다 템포가 다를 수 있어 계산이 복잡하다) 이 계산은 호스트가 한다.
+   * 서버는 받은 값을 검증해서 저장·전파만 한다.
+   */
+  const applyPatch = useCallback(
+    (patch: Partial<RoomState>) => {
+      if (!state) return;
+      let full = patch;
+
+      if (state.running) {
+        const next = { ...state, ...patch };
+        const nextSong = next.currentSong >= 0 ? next.setlist[next.currentSong] : null;
+        const nextTimeline = buildTimeline({
+          sections: nextSong?.sections ?? [],
+          baseBpm: next.bpm,
+          baseBeatsPerBar: next.beatsPerBar,
+          countInBars: next.countInEnabled ? next.countInBars : 0,
+        });
+        full = {
+          ...patch,
+          anchor: reanchor(timeline, nextTimeline, state.anchor, clockRef.current.serverNow()),
+        };
+      }
+
+      send({ type: 'update', patch: full });
+    },
+    [state, timeline, send]
+  );
+
   return {
     engine: engineRef.current,
     clock: clockRef.current,
+    timeline,
     connection,
     sync,
     code,
@@ -232,13 +285,19 @@ export function useRoom() {
       rejoinRef.current = { code: roomCode.toUpperCase(), name };
       send({ type: 'join', code: roomCode.toUpperCase(), name });
     },
-    setBpm: (bpm: number) => send({ type: 'setBpm', bpm }),
-    setMeter: (beatsPerBar: number) => send({ type: 'setMeter', beatsPerBar }),
-    setCountIn: (enabled: boolean, bars?: number) => send({ type: 'setCountIn', enabled, bars }),
+    setBpm: (bpm: number) => applyPatch({ bpm: Math.min(300, Math.max(20, Math.round(bpm))) }),
+    setMeter: (beatsPerBar: number) => applyPatch({ beatsPerBar }),
+    setCountIn: (countInEnabled: boolean, bars?: number) =>
+      applyPatch(bars == null ? { countInEnabled } : { countInEnabled, countInBars: bars }),
     start: () => send({ type: 'start' }),
-    stop: () => send({ type: 'stop' }),
+    stop: () => applyPatch({ running: false }),
     setSetlist: (setlist: Song[]) => send({ type: 'setSetlist', setlist }),
-    selectSong: (index: number) => send({ type: 'selectSong', index }),
+    selectSong: (index: number) => {
+      const song = state?.setlist[index];
+      if (!song) return;
+      // 곡을 고르면 그 곡의 기본 템포·박자표도 함께 적용한다
+      applyPatch({ currentSong: index, bpm: song.bpm, beatsPerBar: song.beatsPerBar });
+    },
     handOffHost: (to: string) => send({ type: 'handOffHost', to }),
   };
 }

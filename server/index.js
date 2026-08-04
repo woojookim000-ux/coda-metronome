@@ -92,8 +92,8 @@ function defaultState() {
     bpm: 120,
     beatsPerBar: 4,
     running: false,
-    anchor: 0, // 서버 시각(ms) — anchorBeat번째 박이 울리는 순간
-    anchorBeat: 0, // anchor에 대응하는 논리 박 번호 (음수 = 카운트인)
+    // 서버 시각(ms). 타임라인의 첫 박(카운트인이 있으면 그 첫 박)이 울리는 순간.
+    anchor: 0,
     countInEnabled: true,
     countInBars: 1,
     setlist: [],
@@ -139,17 +139,7 @@ function broadcastRoom(room) {
   });
 }
 
-/**
- * 재생 중에 bpm이나 박자표를 바꿀 때, 다음 박 위치로 기준점을 옮긴다.
- * 이렇게 해야 박이 겹치거나 건너뛰지 않고 마디 번호도 유지된다.
- */
-function reanchor(state) {
-  if (!state.running) return;
-  const interval = 60000 / state.bpm;
-  const idx = Math.max(0, Math.ceil((serverNow() - state.anchor) / interval));
-  state.anchor = state.anchor + idx * interval;
-  state.anchorBeat = state.anchorBeat + idx;
-}
+const clamp = (min, max, v) => Math.min(max, Math.max(min, Math.round(Number(v))));
 
 // ---------------------------------------------------------------- WebSocket
 
@@ -228,36 +218,31 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'setBpm': {
+      /**
+       * 호스트가 보내는 상태 변경.
+       *
+       * 곡 구간마다 템포와 박자표가 다를 수 있어서 "다음 박이 언제인지"를 서버가
+       * 계산하려면 곡 구조를 전부 알아야 한다. 그 계산은 호스트 클라이언트가 하고
+       * (거기엔 타임라인이 있다) 서버는 값을 검증해서 저장·전파만 한다.
+       */
+      case 'update': {
         const room = currentRoom();
         if (!room || !isHost()) return;
-        const bpm = Math.min(300, Math.max(20, Math.round(Number(msg.bpm) || 120)));
-        if (bpm === room.state.bpm) return;
-        reanchor(room.state);
-        room.state.bpm = bpm;
-        broadcastRoom(room);
-        break;
-      }
+        const p = msg.patch || {};
+        const s = room.state;
 
-      case 'setMeter': {
-        const room = currentRoom();
-        if (!room || !isHost()) return;
-        const bpb = Math.min(12, Math.max(1, Math.round(Number(msg.beatsPerBar) || 4)));
-        if (bpb === room.state.beatsPerBar) return;
-        reanchor(room.state);
-        room.state.beatsPerBar = bpb;
-        room.state.anchorBeat = 0; // 새 박자표는 1마디 1박부터 다시 센다
-        broadcastRoom(room);
-        break;
-      }
-
-      case 'setCountIn': {
-        const room = currentRoom();
-        if (!room || !isHost()) return;
-        room.state.countInEnabled = !!msg.enabled;
-        if (msg.bars != null) {
-          room.state.countInBars = Math.min(4, Math.max(1, Math.round(Number(msg.bars) || 1)));
+        if (p.bpm != null) s.bpm = clamp(20, 300, p.bpm) || s.bpm;
+        if (p.beatsPerBar != null) s.beatsPerBar = clamp(1, 12, p.beatsPerBar) || s.beatsPerBar;
+        if (p.countInEnabled != null) s.countInEnabled = !!p.countInEnabled;
+        if (p.countInBars != null) s.countInBars = clamp(1, 4, p.countInBars) || s.countInBars;
+        if (p.running != null) s.running = !!p.running;
+        if (p.currentSong != null) {
+          const i = Math.round(Number(p.currentSong));
+          if (i === -1 || s.setlist[i]) s.currentSong = i;
         }
+        // anchor는 호스트가 계산한 값이지만, 유효한 수인지는 확인한다
+        if (p.anchor != null && Number.isFinite(p.anchor)) s.anchor = Number(p.anchor);
+
         broadcastRoom(room);
         break;
       }
@@ -265,19 +250,10 @@ wss.on('connection', (ws) => {
       case 'start': {
         const room = currentRoom();
         if (!room || !isHost()) return;
-        const s = room.state;
-        // 모든 기기가 예약할 시간을 벌기 위한 리드타임
-        s.anchor = serverNow() + 600;
-        s.anchorBeat = s.countInEnabled ? -(s.countInBars * s.beatsPerBar) : 0;
-        s.running = true;
-        broadcastRoom(room);
-        break;
-      }
-
-      case 'stop': {
-        const room = currentRoom();
-        if (!room || !isHost()) return;
-        room.state.running = false;
+        // anchor만은 서버 시계로 찍는다. 호스트 시계 오차가 섞이지 않게.
+        // 리드타임은 모든 기기가 첫 박을 예약할 시간을 벌기 위한 것.
+        room.state.anchor = serverNow() + 600;
+        room.state.running = true;
         broadcastRoom(room);
         break;
       }
@@ -291,30 +267,23 @@ wss.on('connection', (ws) => {
           title: String(s.title ?? '').slice(0, 40),
           bpm: Math.min(300, Math.max(20, Math.round(Number(s.bpm) || 120))),
           beatsPerBar: Math.min(12, Math.max(1, Math.round(Number(s.beatsPerBar) || 4))),
-          sections: (Array.isArray(s.sections) ? s.sections : []).slice(0, 40).map((sec) => ({
-            id: String(sec.id ?? Math.random().toString(36).slice(2)),
-            name: String(sec.name ?? '').slice(0, 12),
-            bars: Math.min(999, Math.max(1, Math.round(Number(sec.bars) || 8))),
-          })),
+          sections: (Array.isArray(s.sections) ? s.sections : []).slice(0, 40).map((sec) => {
+            const out = {
+              id: String(sec.id ?? Math.random().toString(36).slice(2)),
+              name: String(sec.name ?? '').slice(0, 12),
+              bars: clamp(1, 999, sec.bars) || 8,
+            };
+            // 템포·박자표는 선택 사항. 없으면 곡 기본값을 따른다.
+            if (sec.bpm != null && Number.isFinite(Number(sec.bpm))) {
+              out.bpm = clamp(20, 300, sec.bpm);
+            }
+            if (sec.beatsPerBar != null && Number.isFinite(Number(sec.beatsPerBar))) {
+              out.beatsPerBar = clamp(1, 12, sec.beatsPerBar);
+            }
+            return out;
+          }),
         }));
         if (room.state.currentSong >= room.state.setlist.length) room.state.currentSong = -1;
-        broadcastRoom(room);
-        break;
-      }
-
-      case 'selectSong': {
-        const room = currentRoom();
-        if (!room || !isHost()) return;
-        const i = Number(msg.index);
-        const song = room.state.setlist[i];
-        if (!song) return;
-        reanchor(room.state);
-        room.state.currentSong = i;
-        room.state.bpm = song.bpm;
-        if (song.beatsPerBar !== room.state.beatsPerBar) {
-          room.state.beatsPerBar = song.beatsPerBar;
-          room.state.anchorBeat = 0;
-        }
         broadcastRoom(room);
         break;
       }
@@ -360,5 +329,5 @@ setInterval(() => {
 }, 30000);
 
 httpServer.listen(PORT, () => {
-  console.log(`[합주 메트로놈] http://localhost:${PORT}  (ws: /ws)`);
+  console.log(`[코다 합주 메트로놈] http://localhost:${PORT}  (ws: /ws)`);
 });

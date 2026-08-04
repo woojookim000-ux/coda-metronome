@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomApi } from '../App';
-import { beatPosition, sectionAt, totalBars } from '../lib/types';
+import { beatInfo } from '../lib/timeline';
+import { totalBars } from '../lib/types';
 import QrModal from './QrModal';
 import Setlist from './Setlist';
 
@@ -34,11 +35,7 @@ export default function Room({ room }: { room: RoomApi }) {
 
   useEffect(() => {
     if (!isHost || !prefs.autoStop || !state?.running || beat === null || endedRef.current) return;
-    const s = state.currentSong >= 0 ? state.setlist[state.currentSong] : null;
-    if (!s || s.sections.length === 0) return;
-    const p = beatPosition(beat, state.beatsPerBar);
-    if (p.isCountIn) return;
-    if (p.bar - 1 >= totalBars(s.sections)) {
+    if (beatInfo(room.timeline, beat).ended) {
       endedRef.current = true;
       room.stop();
     }
@@ -48,15 +45,21 @@ export default function Room({ room }: { room: RoomApi }) {
     return <div className="screen center"><p className="hint">방 정보를 받는 중…</p></div>;
   }
 
-  const pos = beat === null ? null : beatPosition(beat, state.beatsPerBar);
+  const info = beat === null ? null : beatInfo(room.timeline, beat);
 
   const song = state.currentSong >= 0 ? state.setlist[state.currentSong] ?? null : null;
   const sections = song?.sections ?? [];
   const songBars = totalBars(sections);
-  // 카운트인 동안에는 아직 1마디가 시작되지 않았다
-  const barIndex = pos && !pos.isCountIn ? pos.bar - 1 : -1;
-  const here = sections.length && barIndex >= 0 ? sectionAt(sections, barIndex) : null;
-  const songEnded = sections.length > 0 && barIndex >= songBars;
+  // 지금 울리고 있는 구간. 카운트인 중이거나 곡이 끝났으면 없다.
+  const here = info && !info.isCountIn && !info.ended && info.sectionIndex >= 0 ? info : null;
+  const hereSection = here ? sections[here.sectionIndex] : null;
+
+  // 실제로 울리고 있는 템포·박자표. 구간이 지정했으면 그 값이다.
+  const liveBpm = info && state.running ? info.bpm : state.bpm;
+  const liveMeter = info && state.running ? info.beatsPerBar : state.beatsPerBar;
+  const bpmOverridden = liveBpm !== state.bpm;
+  const meterOverridden = liveMeter !== state.beatsPerBar;
+  const hasOverrides = sections.some((s) => s.bpm != null || s.beatsPerBar != null);
 
   const enableAudio = async () => {
     await engine.unlock();
@@ -81,8 +84,8 @@ export default function Room({ room }: { room: RoomApi }) {
 
   return (
     <div className={`screen room${state.running ? ' running' : ''}`}>
-      {prefs.flash && pos && (
-        <div key={beat} className={`flash${pos.isAccent ? ' accent' : ''}`} />
+      {prefs.flash && info && (
+        <div key={beat} className={`flash${info.isAccent ? ' accent' : ''}`} />
       )}
 
       <header className="room-head">
@@ -116,13 +119,14 @@ export default function Room({ room }: { room: RoomApi }) {
           <div className="stage">
             {song && <div className="song-now">♪ {song.title}</div>}
 
+            {/* 점 개수는 지금 울리는 구간의 박자표를 따른다 */}
             <div className="beats">
-              {Array.from({ length: state.beatsPerBar }, (_, i) => (
+              {Array.from({ length: liveMeter }, (_, i) => (
                 <span
                   key={i}
                   className={
                     'beat' +
-                    (pos && pos.beat === i + 1 ? ' on' : '') +
+                    (info && info.beatInBar === i ? ' on' : '') +
                     (i === 0 ? ' accent' : '')
                   }
                 />
@@ -130,20 +134,25 @@ export default function Room({ room }: { room: RoomApi }) {
             </div>
 
             {/* 구간이 등록된 곡이면 "지금 어디인지"를 가장 크게 보여 준다.
-                인이어 없이 합주할 때 정작 헤매는 건 박이 아니라 위치다. */}
-            {/* pos가 아직 null인 시작 직후에는 구간을 계산할 수 없다.
-                이때 구간 화면을 띄우면 "곡 끝"이 잠깐 스친다. */}
-            {sections.length > 0 && state.running && pos && !pos.isCountIn ? (
-              here ? (
+                인이어 없이 합주할 때 정작 헤매는 건 박이 아니라 위치다.
+                info가 아직 null인 시작 직후에 구간 화면을 띄우면 "곡 끝"이 스친다. */}
+            {sections.length > 0 && state.running && info && !info.isCountIn ? (
+              here && hereSection ? (
                 <div className="section-view">
-                  <div className="section-now">{here.section.name}</div>
+                  <div className="section-now">{hereSection.name}</div>
                   <div className="section-next">
                     <b className={here.barsLeft <= 2 ? 'soon' : ''}>{here.barsLeft}</b>
-                    마디 뒤 {here.next ? <em>{here.next.name}</em> : <em className="end">곡 끝</em>}
+                    마디 뒤{' '}
+                    {sections[here.sectionIndex + 1] ? (
+                      <em>{sections[here.sectionIndex + 1].name}</em>
+                    ) : (
+                      <em className="end">곡 끝</em>
+                    )}
                   </div>
                   <div className="section-sub">
-                    {here.section.name} {here.barInSection + 1}/{here.section.bars}마디 · 전체{' '}
-                    {Math.min(barIndex + 1, songBars)}/{songBars}
+                    {hereSection.name} {here.barInSection + 1}/{hereSection.bars}마디 · 전체{' '}
+                    {Math.min(info.bar, songBars)}/{songBars}
+                    {meterOverridden && <> · {liveMeter}/4</>}
                   </div>
                 </div>
               ) : (
@@ -155,11 +164,11 @@ export default function Room({ room }: { room: RoomApi }) {
               <div className="counter">
                 {!state.running ? (
                   <span className="idle">정지</span>
-                ) : pos?.isCountIn ? (
-                  <span className="countin">카운트인 {pos.beat}</span>
+                ) : info?.isCountIn ? (
+                  <span className="countin">카운트인 {info.beatInBar + 1}</span>
                 ) : (
                   <>
-                    <span className="bar-no">{pos ? pos.bar : '–'}</span>
+                    <span className="bar-no">{info ? info.bar : '–'}</span>
                     <span className="bar-label">마디</span>
                   </>
                 )}
@@ -173,11 +182,13 @@ export default function Room({ room }: { room: RoomApi }) {
                     key={s.id}
                     className={
                       'strip-seg' +
-                      (here && here.index === i ? ' on' : '') +
-                      ((here && i < here.index) || songEnded ? ' done' : '')
+                      (here && here.sectionIndex === i ? ' on' : '') +
+                      ((here && i < here.sectionIndex) || info?.ended ? ' done' : '')
                     }
                     style={{ flexGrow: s.bars }}
-                    title={`${s.name} ${s.bars}마디`}
+                    title={`${s.name} ${s.bars}마디${s.bpm ? ` · ${s.bpm}BPM` : ''}${
+                      s.beatsPerBar ? ` · ${s.beatsPerBar}/4` : ''
+                    }`}
                   >
                     <span>{s.name}</span>
                   </div>
@@ -190,8 +201,8 @@ export default function Room({ room }: { room: RoomApi }) {
             <div className="bpm-row">
               <button className="icon big" onClick={() => room.setBpm(state.bpm - 1)} disabled={!isHost}>−</button>
               <div className="bpm">
-                <span className="bpm-value">{state.bpm}</span>
-                <span className="bpm-label">BPM</span>
+                <span className={bpmOverridden ? 'bpm-value over' : 'bpm-value'}>{liveBpm}</span>
+                <span className="bpm-label">{bpmOverridden ? '구간 지정' : 'BPM'}</span>
               </div>
               <button className="icon big" onClick={() => room.setBpm(state.bpm + 1)} disabled={!isHost}>＋</button>
             </div>
@@ -207,6 +218,12 @@ export default function Room({ room }: { room: RoomApi }) {
             <button className="btn ghost small" onClick={tapTempo} disabled={!isHost}>
               탭 템포
             </button>
+            {hasOverrides && (
+              <p className="hint center">
+                슬라이더는 <b>기본 템포</b>({state.bpm})입니다. 템포·박자를 직접 지정한 구간은
+                셋리스트에서 바꾸세요.
+              </p>
+            )}
           </div>
 
           <div className="meters">

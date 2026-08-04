@@ -1,8 +1,14 @@
-/** 곡의 한 구간. "후렴 8마디"처럼 이름과 길이만 갖는다. */
+/**
+ * 곡의 한 구간. "후렴 8마디"처럼 이름과 길이를 갖는다.
+ * bpm과 beatsPerBar는 지정하지 않으면 곡의 기본값을 따른다.
+ * 곡 중간에 박자가 바뀌는 곡은 해당 구간에만 값을 넣으면 된다.
+ */
 export type Section = {
   id: string;
   name: string;
   bars: number;
+  bpm?: number;
+  beatsPerBar?: number;
 };
 
 export type Song = {
@@ -18,10 +24,11 @@ export type RoomState = {
   bpm: number;
   beatsPerBar: number;
   running: boolean;
-  /** 서버시각(ms). 이 순간에 anchorBeat번째 박이 울린다. */
+  /**
+   * 서버시각(ms). 타임라인의 첫 박이 울리는 순간.
+   * 카운트인이 켜져 있으면 카운트인의 첫 박, 아니면 곡의 첫 박이다.
+   */
   anchor: number;
-  /** anchor에 대응하는 논리 박 번호. 음수면 카운트인 구간. */
-  anchorBeat: number;
   countInEnabled: boolean;
   countInBars: number;
   setlist: Song[];
@@ -58,46 +65,15 @@ export const DEFAULT_PREFS: LocalPrefs = {
   autoStop: true,
 };
 
-export type SectionAt = {
-  index: number;
-  section: Section;
-  /** 이 구간에서 몇 번째 마디인가 (0부터) */
-  barInSection: number;
-  /** 구간이 바뀌기까지 남은 마디 수. 마지막 마디에서 1. */
-  barsLeft: number;
-  next: Section | null;
-};
-
 export function totalBars(sections: Section[]) {
   return sections.reduce((sum, s) => sum + s.bars, 0);
 }
 
-/** 몇 번째 마디(0부터)가 어느 구간에 속하는지. 곡이 끝났으면 null. */
-export function sectionAt(sections: Section[], barIndex: number): SectionAt | null {
-  let start = 0;
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    if (barIndex < start + section.bars) {
-      return {
-        index: i,
-        section,
-        barInSection: barIndex - start,
-        barsLeft: start + section.bars - barIndex,
-        next: sections[i + 1] ?? null,
-      };
-    }
-    start += section.bars;
-  }
-  return null;
-}
-
-/** 논리 박 번호 → 마디/박 위치 */
-export function beatPosition(logicalBeat: number, beatsPerBar: number) {
-  const inBar = ((logicalBeat % beatsPerBar) + beatsPerBar) % beatsPerBar;
-  return {
-    isCountIn: logicalBeat < 0,
-    bar: Math.floor(logicalBeat / beatsPerBar) + 1,
-    beat: inBar + 1,
-    isAccent: inBar === 0,
-  };
+/** 구간 목록의 총 길이(초). 구간마다 템포가 다를 수 있으므로 각각 계산한다. */
+export function totalSeconds(song: Song) {
+  return song.sections.reduce((sum, s) => {
+    const bpm = s.bpm ?? song.bpm;
+    const beatsPerBar = s.beatsPerBar ?? song.beatsPerBar;
+    return sum + (s.bars * beatsPerBar * 60) / bpm;
+  }, 0);
 }

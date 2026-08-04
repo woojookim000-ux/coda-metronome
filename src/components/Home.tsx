@@ -21,7 +21,7 @@ export default function Home({ room }: { room: RoomApi }) {
     <div className="screen home">
       <header className="home-head">
         <div className="logo">♩</div>
-        <h1>합주 메트로놈</h1>
+        <h1>코다 합주 메트로놈</h1>
         <p className="tagline">
           한 방에 모이면 모든 기기가 <b>같은 순간에</b> 클릭을 냅니다.
         </p>

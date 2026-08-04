@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { RoomApi } from '../App';
 import type { Section, Song } from '../lib/types';
-import { totalBars } from '../lib/types';
+import { totalBars, totalSeconds } from '../lib/types';
 import { loadSavedSetlist, saveSetlist } from '../lib/useRoom';
 
 const newId = () => Math.random().toString(36).slice(2);
@@ -49,30 +49,65 @@ function SectionEditor({
       <ul className="sec-list">
         {sections.map((s, i) => (
           <li key={s.id}>
-            <input
-              className="sec-name"
-              value={s.name}
-              maxLength={12}
-              onChange={(e) => patch(s.id, { name: e.target.value })}
-            />
-            <input
-              className="sec-bars"
-              type="number"
-              min={1}
-              max={999}
-              value={s.bars}
-              onChange={(e) => patch(s.id, { bars: Math.max(1, Number(e.target.value) || 1) })}
-            />
-            <span className="sec-unit">마디</span>
-            <button className="icon" onClick={() => move(i, -1)} aria-label="위로">↑</button>
-            <button className="icon" onClick={() => move(i, 1)} aria-label="아래로">↓</button>
-            <button
-              className="icon danger"
-              onClick={() => onChange(sections.filter((x) => x.id !== s.id))}
-              aria-label="삭제"
-            >
-              ×
-            </button>
+            <div className="sec-row">
+              <input
+                className="sec-name"
+                value={s.name}
+                maxLength={12}
+                onChange={(e) => patch(s.id, { name: e.target.value })}
+              />
+              <input
+                className="sec-bars"
+                type="number"
+                min={1}
+                max={999}
+                value={s.bars}
+                onChange={(e) => patch(s.id, { bars: Math.max(1, Number(e.target.value) || 1) })}
+              />
+              <span className="sec-unit">마디</span>
+              <button className="icon" onClick={() => move(i, -1)} aria-label="위로">↑</button>
+              <button className="icon" onClick={() => move(i, 1)} aria-label="아래로">↓</button>
+              <button
+                className="icon danger"
+                onClick={() => onChange(sections.filter((x) => x.id !== s.id))}
+                aria-label="삭제"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* 비워 두면 곡 기본값을 따른다. 박자가 바뀌는 구간만 채우면 된다. */}
+            <div className="sec-row over">
+              <label>
+                <span>템포</span>
+                <input
+                  type="number"
+                  min={20}
+                  max={300}
+                  value={s.bpm ?? ''}
+                  placeholder={String(song.bpm)}
+                  onChange={(e) =>
+                    patch(s.id, { bpm: e.target.value === '' ? undefined : Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label>
+                <span>박자</span>
+                <select
+                  value={s.beatsPerBar ?? ''}
+                  onChange={(e) =>
+                    patch(s.id, {
+                      beatsPerBar: e.target.value === '' ? undefined : Number(e.target.value),
+                    })
+                  }
+                >
+                  <option value="">기본 {song.beatsPerBar}/4</option>
+                  {[2, 3, 4, 5, 6, 7, 9, 12].map((n) => (
+                    <option key={n} value={n}>{n}/4</option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </li>
         ))}
       </ul>
@@ -107,8 +142,7 @@ function SectionEditor({
 
       {sections.length > 0 && (
         <p className="hint">
-          전체 <b>{totalBars(sections)}마디</b> · 약{' '}
-          {Math.round((totalBars(sections) * song.beatsPerBar * 60) / song.bpm)}초
+          전체 <b>{totalBars(sections)}마디</b> · 약 {Math.round(totalSeconds(song))}초
         </p>
       )}
     </div>
@@ -207,7 +241,11 @@ export default function Setlist({ room }: { room: RoomApi }) {
                   {s.sections.map((sec) => (
                     <li key={sec.id}>
                       <span>{sec.name}</span>
-                      <span className="sec-unit">{sec.bars}마디</span>
+                      <span className="sec-unit">
+                        {sec.bars}마디
+                        {sec.beatsPerBar != null && ` · ${sec.beatsPerBar}/4`}
+                        {sec.bpm != null && ` · ${sec.bpm}BPM`}
+                      </span>
                     </li>
                   ))}
                   {s.sections.length === 0 && <li className="hint">등록된 구간이 없습니다.</li>}
