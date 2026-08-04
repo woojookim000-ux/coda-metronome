@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "concurrently -n server,client -c cyan,magenta \"node server/index.js --port 3001\" \"vite\"",
     "dev:server": "node server/index.js --port 3001",

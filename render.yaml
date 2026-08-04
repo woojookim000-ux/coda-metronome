@@ -1,0 +1,15 @@
+# Render 블루프린트.
+# 저장소를 연결하면 Render가 이 파일을 읽어 서비스를 자동으로 만든다.
+# Build/Start 명령을 손으로 입력할 필요가 없다.
+services:
+  - type: web
+    name: coda-metronome
+    runtime: node
+    plan: free
+    region: singapore # 한국에서 가장 가까운 무료 리전
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
