@@ -20,6 +20,9 @@ const LOOKAHEAD_MS = 250; // 얼마나 앞까지 미리 예약할지
 // 화면이 가려지면 브라우저가 setInterval을 1초 단위로 늦춘다. 오디오 스레드는
 // 그대로 돌기 때문에, 미리 넉넉히 예약해 두면 알림창이 떠도 박이 끊기지 않는다.
 const HIDDEN_LOOKAHEAD_MS = 3000;
+// 안내는 마디 첫 박에 걸리는데, 그 박은 강세음이라 제일 크다. 그대로 겹치면
+// 말이 묻히므로 클릭이 잦아든 뒤에 말하게 살짝 늦춘다.
+const SPEECH_OFFSET_MS = 150;
 
 /**
  * 오디오 클럭과 벽시계 사이의 대응 관계.
@@ -299,11 +302,11 @@ export class MetronomeEngine {
 
   /** 안내 음성은 오디오 클럭에 예약할 수 없으므로 타이머로 맞춘다 */
   private speakAt(localTime: number, text: string) {
-    const delay = Math.max(0, localTime - now());
+    const delay = Math.max(0, localTime - now() + SPEECH_OFFSET_MS);
     const t = window.setTimeout(() => {
       const i = this.visualTimers.indexOf(t);
       if (i >= 0) this.visualTimers.splice(i, 1);
-      say(text, this.prefs.volume);
+      say(text, this.prefs.speechVolume, this.prefs.voiceName);
     }, delay);
     // 정지하거나 다시 예약할 때 같이 취소되도록 화면 타이머와 함께 관리한다
     this.visualTimers.push(t);

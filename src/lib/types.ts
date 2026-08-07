@@ -53,6 +53,10 @@ export type LocalPrefs = {
   name: string;
   /** 다음 구간 이름을 음성으로 미리 알려줄지 */
   speak: boolean;
+  /** 안내 음성 볼륨. 클릭과 따로 둔다 — 드럼 소리를 뚫어야 한다. */
+  speechVolume: number;
+  /** 직접 고른 영어 음성 이름. 빈 문자열이면 자동 선택. */
+  voiceName: string;
   /** 호스트일 때, 마지막 구간이 끝나면 자동으로 정지 */
   autoStop: boolean;
 };
@@ -65,6 +69,8 @@ export const DEFAULT_PREFS: LocalPrefs = {
   flash: true,
   name: '',
   speak: true,
+  speechVolume: 1,
+  voiceName: '',
   autoStop: true,
 };
 

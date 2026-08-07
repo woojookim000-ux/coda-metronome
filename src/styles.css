@@ -224,6 +224,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 .panel-actions { display: flex; gap: 6px; }
 .preset-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.voice-select {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 11px; padding: 12px; color: var(--text); width: 100%;
+}
+.hint.warn { color: var(--accent); }
 
 .members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .members li { display: flex; align-items: center; gap: 9px; font-size: 14px; }

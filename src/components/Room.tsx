@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomApi } from '../App';
-import { say, supportsSpeech } from '../lib/speech';
+import { listVoices, say, supportsSpeech } from '../lib/speech';
 import { beatInfo } from '../lib/timeline';
 import { totalBars } from '../lib/types';
 import QrModal from './QrModal';
@@ -15,6 +15,8 @@ export default function Room({ room }: { room: RoomApi }) {
   const [showQr, setShowQr] = useState(false);
   const [tab, setTab] = useState<'play' | 'setlist' | 'device'>('play');
   const tapsRef = useRef<number[]>([]);
+  // 음성 목록은 브라우저가 늦게 채우므로 탭을 열 때 다시 읽는다
+  const [englishVoices, setEnglishVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     engine.onBeat = setBeat;
@@ -26,6 +28,14 @@ export default function Room({ room }: { room: RoomApi }) {
   useEffect(() => {
     if (!state?.running) setBeat(null);
   }, [state?.running]);
+
+  useEffect(() => {
+    if (tab !== 'device') return;
+    const load = () => setEnglishVoices(listVoices().filter((v) => v.lang.toLowerCase().startsWith('en')));
+    load();
+    const t = setTimeout(load, 500); // 목록이 늦게 채워지는 브라우저 대비
+    return () => clearTimeout(t);
+  }, [tab]);
 
   // 마지막 구간이 끝나면 호스트가 대신 정지시킨다. 합주 중에는 아무도
   // 폰에 손을 댈 수 없으므로 이게 없으면 곡이 끝나도 클릭이 계속 돈다.
@@ -402,15 +412,58 @@ export default function Room({ room }: { room: RoomApi }) {
               '이 브라우저는 음성 합성을 지원하지 않습니다.'
             )}
           </p>
-          <div className="preset-row">
-            <button
-              className="chip"
-              disabled={!audioReady || !supportsSpeech()}
-              onClick={() => say('Bridge', prefs.volume)}
-            >
-              음성 미리 듣기
-            </button>
-          </div>
+
+          {supportsSpeech() && prefs.speak && (
+            <>
+              <label className="field">
+                <span>음성 볼륨</span>
+                <input
+                  className="slider"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={prefs.speechVolume}
+                  onChange={(e) => room.setPrefs({ speechVolume: Number(e.target.value) })}
+                />
+              </label>
+
+              <label className="field">
+                <span>영어 음성</span>
+                <select
+                  className="voice-select"
+                  value={prefs.voiceName}
+                  onChange={(e) => room.setPrefs({ voiceName: e.target.value })}
+                >
+                  <option value="">자동 선택</option>
+                  {englishVoices.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {englishVoices.length === 0 && (
+                <p className="hint warn">
+                  이 기기에 영어 음성이 없습니다. 구간 이름을 한글 발음으로 바꿔 읽습니다
+                  (Chorus → 코러스). 안드로이드는 <b>설정 → 언어 → 음성 → TTS</b>에서 영어를
+                  추가하면 제대로 나옵니다.
+                </p>
+              )}
+
+              <div className="preset-row">
+                {['Intro', 'Chorus', 'Bridge'].map((w) => (
+                  <button
+                    key={w}
+                    className="chip"
+                    onClick={() => say(w, prefs.speechVolume, prefs.voiceName)}
+                  >
+                    ▶ {w}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           <label className="toggle row">
             <input
