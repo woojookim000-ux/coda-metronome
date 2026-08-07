@@ -51,6 +51,8 @@ export type LocalPrefs = {
   accent: boolean;
   flash: boolean;
   name: string;
+  /** 다음 구간 이름을 음성으로 미리 알려줄지 */
+  speak: boolean;
   /** 호스트일 때, 마지막 구간이 끝나면 자동으로 정지 */
   autoStop: boolean;
 };
@@ -62,6 +64,7 @@ export const DEFAULT_PREFS: LocalPrefs = {
   accent: true,
   flash: true,
   name: '',
+  speak: true,
   autoStop: true,
 };
 

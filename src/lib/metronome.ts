@@ -1,5 +1,6 @@
 import { Clock, now } from './clock';
-import { beatAtOrAfter, beatInfo, timeOfBeat, type Timeline } from './timeline';
+import { langOf, primeSpeech, say, stopSpeaking } from './speech';
+import { beatAtOrAfter, beatInfo, firstSectionName, timeOfBeat, type Timeline } from './timeline';
 import { DEFAULT_PREFS, type LocalPrefs, type RoomState } from './types';
 
 /**
@@ -136,6 +137,9 @@ export class MetronomeEngine {
     src.connect(this.ctx.destination);
     src.start(0);
 
+    // 음성도 같은 제스처 안에서 한 번 깨워 둬야 iOS에서 나온다
+    primeSpeech();
+
     // 시작 버튼을 누르기 전부터 오디오↔벽시계 매핑을 잡아 둔다.
     // 그래야 첫 카운트인부터 정확하다.
     if (this.mapTimer === null) {
@@ -196,6 +200,8 @@ export class MetronomeEngine {
       this.timer = null;
     }
     this.clearScheduled();
+    // 재예약 때는 끊지 않는다. 안내가 나오는 중에 잘리면 안 되기 때문이다.
+    stopSpeaking();
   }
 
   /**
@@ -267,6 +273,20 @@ export class MetronomeEngine {
       this.click(logicalBeat, at, this.prefs.accent && info.isAccent, info.isCountIn);
     }
 
+    // 구간 이름 안내. 지금 구간의 마지막 마디 첫 박에 "다음 구간"을 말해 준다.
+    // 구간이 바뀌는 순간에 말하면 이미 늦어서 준비할 수 없다.
+    if (this.prefs.speak) {
+      let announce: string | null = null;
+      if (logicalBeat === tl.firstBeat) {
+        // 카운트인 시작 — 첫 구간을 미리 알려준다
+        announce = firstSectionName(tl);
+      } else if (info.beatInBar === 0 && info.barsLeft === 1 && !info.ended) {
+        // 마지막 구간이면 끝난다는 것도 알려준다. 구간 이름을 쓰는 언어에 맞춘다.
+        announce = info.nextName ?? (langOf(info.name) === 'ko-KR' ? '끝' : 'End');
+      }
+      if (announce) this.speakAt(localTime, announce);
+    }
+
     // 화면은 지연 보정 없이, 소리가 귀에 닿는 시각에 맞춘다
     const visualDelay = Math.max(0, localTime - now());
     const t = window.setTimeout(() => {
@@ -274,6 +294,18 @@ export class MetronomeEngine {
       if (i >= 0) this.visualTimers.splice(i, 1);
       this.onBeat?.(logicalBeat);
     }, visualDelay);
+    this.visualTimers.push(t);
+  }
+
+  /** 안내 음성은 오디오 클럭에 예약할 수 없으므로 타이머로 맞춘다 */
+  private speakAt(localTime: number, text: string) {
+    const delay = Math.max(0, localTime - now());
+    const t = window.setTimeout(() => {
+      const i = this.visualTimers.indexOf(t);
+      if (i >= 0) this.visualTimers.splice(i, 1);
+      say(text, this.prefs.volume);
+    }, delay);
+    // 정지하거나 다시 예약할 때 같이 취소되도록 화면 타이머와 함께 관리한다
     this.visualTimers.push(t);
   }
 

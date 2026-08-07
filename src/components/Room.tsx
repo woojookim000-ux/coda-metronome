@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomApi } from '../App';
+import { say, supportsSpeech } from '../lib/speech';
 import { beatInfo } from '../lib/timeline';
 import { totalBars } from '../lib/types';
 import QrModal from './QrModal';
@@ -379,6 +380,35 @@ export default function Room({ room }: { room: RoomApi }) {
             ))}
             <button className="chip" onClick={() => engine.testClick()} disabled={!audioReady}>
               테스트 클릭
+            </button>
+          </div>
+
+          <label className="toggle row">
+            <input
+              type="checkbox"
+              checked={prefs.speak}
+              disabled={!supportsSpeech()}
+              onChange={(e) => room.setPrefs({ speak: e.target.checked })}
+            />
+            <span>구간 이름 음성 안내</span>
+          </label>
+          <p className="hint">
+            {supportsSpeech() ? (
+              <>
+                구간이 바뀌기 <b>한 마디 전</b>에 다음 구간 이름을 말해 줍니다. 화면을 못 볼 때
+                유용합니다.
+              </>
+            ) : (
+              '이 브라우저는 음성 합성을 지원하지 않습니다.'
+            )}
+          </p>
+          <div className="preset-row">
+            <button
+              className="chip"
+              disabled={!audioReady || !supportsSpeech()}
+              onClick={() => say('Bridge', prefs.volume)}
+            >
+              음성 미리 듣기
             </button>
           </div>
 

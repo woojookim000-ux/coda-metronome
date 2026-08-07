@@ -6,8 +6,8 @@ import { loadSavedSetlist, saveSetlist } from '../lib/useRoom';
 
 const newId = () => Math.random().toString(36).slice(2);
 
-/** 밴드 합주에서 자주 쓰는 구간 이름 */
-const PRESETS = ['인트로', 'A', 'B', '후렴', '간주', '브릿지', '아웃트로'];
+/** 밴드 합주에서 자주 쓰는 구간 이름. 직접 입력해도 되고 한글도 읽어 준다. */
+const PRESETS = ['Intro', 'Verse', 'Pre', 'Chorus', 'Bridge', 'Solo', 'Outro'];
 
 function SectionEditor({
   song,
@@ -42,7 +42,8 @@ function SectionEditor({
     <div className="sec-editor">
       {sections.length === 0 && (
         <p className="hint">
-          구간을 넣으면 합주 중에 "지금 후렴, 3마디 뒤 브릿지"처럼 화면에 크게 표시됩니다.
+          구간을 넣으면 합주 중에 "지금 Chorus, 3마디 뒤 Bridge"처럼 화면에 크게 뜨고,
+          바뀌기 한 마디 전에 음성으로도 알려줍니다.
         </p>
       )}
 

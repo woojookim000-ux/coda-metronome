@@ -14,6 +14,8 @@ import type { Section } from './types';
 export type Segment = {
   /** 섹션 번호. -1이면 카운트인, -2면 셋리스트 없이 도는 무한 구간 */
   sectionIndex: number;
+  /** 구간 이름. 음성 안내에 쓴다. 카운트인·무한 구간은 빈 문자열. */
+  name: string;
   startBeat: number;
   /** 무한 구간이면 Infinity */
   beats: number;
@@ -54,6 +56,10 @@ export type BeatInfo = {
   barInSection: number;
   /** 구간이 바뀌기까지 남은 마디 수 (마지막 마디에서 1) */
   barsLeft: number;
+  /** 지금 구간 이름 */
+  name: string;
+  /** 다음 구간 이름. 이번이 마지막 구간이면 null. */
+  nextName: string | null;
 };
 
 export function buildTimeline(opts: {
@@ -77,6 +83,7 @@ export function buildTimeline(opts: {
   if (countInBeats > 0) {
     segments.push({
       sectionIndex: -1,
+      name: '',
       startBeat: -countInBeats,
       beats: countInBeats,
       interval: 60000 / firstBpm,
@@ -94,6 +101,7 @@ export function buildTimeline(opts: {
   if (sections.length === 0) {
     segments.push({
       sectionIndex: -2,
+      name: '',
       startBeat: 0,
       beats: Infinity,
       interval: 60000 / baseBpm,
@@ -121,6 +129,7 @@ export function buildTimeline(opts: {
 
     segments.push({
       sectionIndex: i,
+      name: s.name,
       startBeat: beat,
       beats,
       interval,
@@ -145,14 +154,24 @@ export function buildTimeline(opts: {
   };
 }
 
-/** 이 박을 담고 있는 구간. 끝을 넘어가면 마지막 구간으로 연장한다. */
-function segmentForBeat(tl: Timeline, beat: number): Segment {
-  let seg = tl.segments[0];
-  for (const s of tl.segments) {
-    if (beat >= s.startBeat) seg = s;
+/** 이 박을 담고 있는 구간의 인덱스. 끝을 넘어가면 마지막 구간으로 연장한다. */
+function segmentIndexForBeat(tl: Timeline, beat: number): number {
+  let idx = 0;
+  for (let i = 0; i < tl.segments.length; i++) {
+    if (beat >= tl.segments[i].startBeat) idx = i;
     else break;
   }
-  return seg;
+  return idx;
+}
+
+function segmentForBeat(tl: Timeline, beat: number): Segment {
+  return tl.segments[segmentIndexForBeat(tl, beat)];
+}
+
+/** 곡의 첫 구간 이름. 카운트인 중에 미리 알려줄 때 쓴다. */
+export function firstSectionName(tl: Timeline): string | null {
+  const seg = tl.segments.find((s) => s.sectionIndex >= 0);
+  return seg && seg.name ? seg.name : null;
 }
 
 /** 논리 박 → 타임라인 시작으로부터의 경과 ms */
@@ -174,7 +193,9 @@ export function beatAtOrAfter(tl: Timeline, ms: number): number {
 }
 
 export function beatInfo(tl: Timeline, beat: number): BeatInfo {
-  const seg = segmentForBeat(tl, beat);
+  const segIdx = segmentIndexForBeat(tl, beat);
+  const seg = tl.segments[segIdx];
+  const next = tl.segments[segIdx + 1];
   const inSeg = beat - seg.startBeat;
   const beatInBar = ((inSeg % seg.beatsPerBar) + seg.beatsPerBar) % seg.beatsPerBar;
   const barInSection = Math.floor(inSeg / seg.beatsPerBar);
@@ -194,6 +215,8 @@ export function beatInfo(tl: Timeline, beat: number): BeatInfo {
     barsLeft: Number.isFinite(seg.beats)
       ? Math.floor(seg.beats / seg.beatsPerBar) - barInSection
       : Infinity,
+    name: seg.name,
+    nextName: next && next.name ? next.name : null,
   };
 }
 
