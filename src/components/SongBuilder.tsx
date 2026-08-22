@@ -285,14 +285,16 @@ export default function SongBuilder({
           <div className="step-title">④ 구간 다듬기</div>
           {rows.length === 0 && <p className="hint">아직 구간이 없습니다. 위에서 분석하거나 찍어 보세요.</p>}
           <ul className="sec-list">
-            {rows.map((r, i) => (
+            {rows.map((r) => (
               <li key={r.id}>
                 <div className="sec-row">
                   <select
                     className="sec-name"
                     value={PRESETS.includes(r.name) ? r.name : '__custom'}
                     onChange={(e) =>
-                      e.target.value !== '__custom' && patch(r.id, { name: e.target.value })
+                      // 직접 입력을 고르면 프리셋에 없는 값으로 비워 둬야
+                      // 아래 입력 칸이 나타난다. 그냥 무시하면 선택이 되돌아간다.
+                      patch(r.id, { name: e.target.value === '__custom' ? '' : e.target.value })
                     }
                   >
                     {PRESETS.map((p) => (
@@ -317,14 +319,15 @@ export default function SongBuilder({
                 </div>
                 {!PRESETS.includes(r.name) && (
                   <input
-                    className="sec-name"
+                    className="sec-name custom"
                     value={r.name}
                     maxLength={12}
-                    placeholder="구간 이름"
+                    placeholder="구간 이름 (예: Verse 2)"
+                    autoComplete="off"
+                    autoFocus
                     onChange={(e) => patch(r.id, { name: e.target.value })}
                   />
                 )}
-                {i === rows.length - 1 && null}
               </li>
             ))}
           </ul>

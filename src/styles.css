@@ -407,3 +407,4 @@ button, input, select { font: inherit; color: inherit; }
 .tap-now small { font-weight: 500; opacity: .7; font-size: 12px; }
 .tap-row { display: flex; gap: 6px; }
 .modal.builder .sec-name { min-width: 0; }
+.sec-name.custom { width: 100%; margin-top: 4px; }
