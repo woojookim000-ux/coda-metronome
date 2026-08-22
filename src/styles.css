@@ -382,3 +382,28 @@ button, input, select { font: inherit; color: inherit; }
   display: flex; flex-direction: column; gap: 3px;
 }
 .offline-bar small { font-weight: 500; color: var(--muted); font-size: 12px; }
+
+/* ------------------------------------------------------------ 곡 만들기 */
+
+.modal.builder {
+  max-width: 460px; max-height: 88vh; overflow-y: auto;
+  align-items: stretch; text-align: left;
+}
+.builder-step {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 13px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.step-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.step-title small { font-weight: 500; color: var(--muted); }
+.file-input { font-size: 13px; color: var(--muted); }
+.progress { position: relative; height: 26px; background: var(--surface); border-radius: 8px; overflow: hidden; }
+.progress-bar { position: absolute; inset: 0 auto 0 0; background: var(--accent-2); opacity: .35; transition: width .2s; }
+.progress span { position: relative; display: grid; place-items: center; height: 100%; font-size: 12px; }
+.warn-text { color: var(--accent); }
+.bpm-row.small { gap: 10px; flex-wrap: wrap; justify-content: center; }
+.bpm-row.small .bpm-value { font-size: 34px; }
+.tap-now { display: flex; flex-direction: column; gap: 3px; }
+.tap-now small { font-weight: 500; opacity: .7; font-size: 12px; }
+.tap-row { display: flex; gap: 6px; }
+.modal.builder .sec-name { min-width: 0; }

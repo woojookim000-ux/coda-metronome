@@ -3,6 +3,7 @@ import type { RoomApi } from '../App';
 import type { Section, Song } from '../lib/types';
 import { totalBars, totalSeconds } from '../lib/types';
 import { loadSavedSetlist, saveSetlist } from '../lib/useRoom';
+import SongBuilder from './SongBuilder';
 
 const newId = () => Math.random().toString(36).slice(2);
 
@@ -156,6 +157,7 @@ export default function Setlist({ room }: { room: RoomApi }) {
   const [bpm, setBpm] = useState(120);
   const [bpb, setBpb] = useState(4);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const songs = state.setlist;
 
@@ -187,6 +189,9 @@ export default function Setlist({ room }: { room: RoomApi }) {
         셋리스트
         {room.isHost && (
           <div className="panel-actions">
+            <button className="chip on" onClick={() => setBuilding(true)}>
+              음원으로 만들기
+            </button>
             <button className="chip" onClick={() => saveSetlist(songs)} disabled={!songs.length}>
               내 기기에 저장
             </button>
@@ -281,6 +286,17 @@ export default function Setlist({ room }: { room: RoomApi }) {
           </select>
           <button className="btn small" onClick={add}>추가</button>
         </div>
+      )}
+
+      {building && (
+        <SongBuilder
+          onSave={(song) => {
+            room.setSetlist([...songs, song]);
+            setBuilding(false);
+            setOpenId(song.id);
+          }}
+          onClose={() => setBuilding(false)}
+        />
       )}
     </div>
   );
