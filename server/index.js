@@ -193,14 +193,25 @@ wss.on('connection', (ws) => {
 
       case 'join': {
         const code = String(msg.code || '').toUpperCase().trim();
-        const room = rooms.get(code);
+        let room = rooms.get(code);
+        let revived = false;
+
         if (!room) {
-          send({ type: 'error', message: '그런 방이 없습니다. 코드를 다시 확인해 주세요.' });
-          return;
+          // 처음 들어오는 사람에게는 코드가 틀렸다고 알려야 한다.
+          // 하지만 이미 그 방에 있던 사람이 다시 들어오는 경우라면(서버 재시작 등으로
+          // 방이 사라졌을 때) 같은 코드로 방을 되살린다. 그러지 않으면 합주 도중에
+          // 모두가 새 코드를 다시 나눠 가져야 한다.
+          if (!msg.rejoin) {
+            send({ type: 'error', message: '그런 방이 없습니다. 코드를 다시 확인해 주세요.' });
+            return;
+          }
+          room = createRoom(code);
+          revived = true;
         }
+
         room.emptySince = null;
         room.members.set(id, { ws, name: msg.name || '멤버', soundOn: true });
-        if (!room.hostId) room.hostId = id;
+        if (!room.hostId || (revived && msg.wasHost)) room.hostId = id;
         ws.roomCode = code;
         send({ type: 'joined', code, id, isHost: room.hostId === id });
         broadcastRoom(room);

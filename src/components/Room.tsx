@@ -118,6 +118,15 @@ export default function Room({ room }: { room: RoomApi }) {
         </div>
       </header>
 
+      {/* 끊겨도 메트로놈은 계속 돈다. 다만 호스트 조작이 전달되지 않으므로
+          그 사실을 알려 줘야 한다 — 예전엔 초록불 그대로라 눈치챌 수 없었다. */}
+      {room.connection !== 'online' && (
+        <div className="offline-bar">
+          {room.connection === 'connecting' ? '서버에 다시 연결하는 중…' : '서버와 연결이 끊겼습니다'}
+          <small>메트로놈은 계속 돕니다. 다만 지금은 템포·시작 변경이 전달되지 않습니다.</small>
+        </div>
+      )}
+
       {!audioReady && (
         <button className="audio-unlock" onClick={enableAudio}>
           탭해서 소리 켜기

@@ -46,6 +46,8 @@ export function useRoom() {
   const pendingRef = useRef<any[]>([]);
   /** 재접속했을 때 자동으로 다시 들어가기 위해 기억해 둔다 */
   const rejoinRef = useRef<{ code: string; name: string } | null>(null);
+  /** 끊기기 직전에 내가 호스트였는지. 방이 되살아날 때 호스트를 돌려받는다. */
+  const wasHostRef = useRef(false);
 
   const [connection, setConnection] = useState<Connection>('connecting');
   const [code, setCode] = useState<string | null>(null);
@@ -98,7 +100,15 @@ export function useRoom() {
         }, 120);
 
         if (rejoinRef.current) {
-          ws.send(JSON.stringify({ type: 'join', ...rejoinRef.current }));
+          // rejoin 표시가 있어야 서버가 사라진 방을 같은 코드로 되살려 준다
+          ws.send(
+            JSON.stringify({
+              type: 'join',
+              ...rejoinRef.current,
+              rejoin: true,
+              wasHost: wasHostRef.current,
+            })
+          );
         }
         for (const m of pendingRef.current.splice(0)) ws.send(JSON.stringify(m));
       };
@@ -228,6 +238,11 @@ export function useRoom() {
   }, []);
 
   const isHost = !!myId && myId === hostId;
+
+  // 끊기는 순간의 값이 아니라, 끊기기 직전까지의 값을 기억해 둬야 한다
+  useEffect(() => {
+    if (myId && hostId) wasHostRef.current = myId === hostId;
+  }, [myId, hostId]);
 
   /**
    * 호스트가 템포·박자표·곡을 바꿀 때 쓴다.
