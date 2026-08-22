@@ -184,7 +184,14 @@ export default function SongBuilder({
 
         <label className="field">
           <span>곡 제목</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={40} />
+          {/* 브라우저가 예전에 입력한 값으로 멋대로 채우는 걸 막는다 */}
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={40}
+            autoComplete="off"
+            placeholder="음원을 올리면 파일 이름이 들어갑니다"
+          />
         </label>
 
         {/* 1단계 — 음원 분석 */}
